@@ -119,7 +119,7 @@ If you have a JSON array, you can convert it to a stream via jq like so:
 		}
 
 		if len(periods) == 0 {
-			return errors.New("missing periods, please provide JSON objects via STDIN or --file")
+			return errors.New("missing attendance periods, please provide JSON objects via STDIN or --file")
 		}
 
 		periodsPerDay := slices.GroupBy(periods, func(p personio.Period) string {
