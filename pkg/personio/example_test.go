@@ -42,7 +42,7 @@ func Example() {
 
 	log.Println("Logged in as employee ID:", client.EmployeeID)
 
-	currentEmployee, err := client.GetCurrentEmployeeData()
+	currentEmployee, err := client.GetMyEmployeeData()
 	if err != nil {
 		log.Fatalln("Error fetching employee:", err)
 	}

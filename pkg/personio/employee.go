@@ -48,7 +48,7 @@ type EmployeeTab struct {
 	IsActive bool   `json:"isActive"`
 }
 
-func (c *Client) GetCurrentEmployeeData() (*Employee, error) {
+func (c *Client) GetMyEmployeeData() (*Employee, error) {
 	if c.EmployeeID == 0 {
 		return nil, errors.New("no employee ID stored in client")
 	}

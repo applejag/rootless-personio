@@ -24,10 +24,89 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type AttendanceCalendar struct {
+	AttendanceRights         map[string]bool                         `json:"attendance_rights"`
+	EmployeeWorkingSchedules struct{}                                `json:"employee_working_schedules"`
+	AttendanceDays           Data[[]AttendanceCalendarDay]           `json:"attendance_days"`
+	AttendancePeriods        Data[[]AttendanceCalendarAbsencePeriod] `json:"attendance_periods"`
+	OvertimeItems            struct{}                                `json:"overtime_items"`
+	AttendanceAlerts         struct{}                                `json:"attendance_alerts"`
+	AbsencePeriods           struct{}                                `json:"absence_periods"`
+	Holidays                 Data[[]AttendanceCalendarHoliday]       `json:"holidays"`
+}
+
+type AttendanceCalendarDay struct {
+	ID         string                          `json:"id"` // ex: "d5bb4b32-c499-4f79-a534-93481505bd60"
+	Attributes AttendanceCalendarDayAttributes `json:"attributes"`
+}
+
+type AttendanceCalendarDayAttributes struct {
+	BreakMin    int    `json:"break_min"`    // Duration of breaks in minutes
+	DurationMin int    `json:"duration_min"` // Duration of attendance in minutes
+	Status      string `json:"status"`       // ex: "empty"
+	Day         string `json:"day"`          // ex: "2023-01-20"
+}
+
+type AttendanceCalendarAbsencePeriod struct {
+	ID                         string `json:"id"`   // ex: "123456789"
+	Name                       string `json:"name"` // ex: "Paid vacation"
+	TracksOvertime             bool   `json:"tracks_overtime"`
+	MeasurementUnit            string `json:"measurement_unit"` // ex: "day"
+	StartDate                  string `json:"start_date"`       // ex: "2022-12-22"
+	StartTime                  string `json:"start_time"`       // ex: "2022-12-22 00:00:00"
+	EndDate                    string `json:"end_date"`         // ex: "2022-12-28"
+	EndTime                    string `json:"end_time"`         // ex: "2022-12-29 00:00:00"
+	EffectiveDurationInMinutes *int   `json:"effective_duration_in_minutes"`
+	HalfDayStart               bool   `json:"half_day_start"`
+	HalfDayEnd                 bool   `json:"half_day_end"`
+}
+
+type AttendanceCalendarHoliday struct {
+	HalfDay             string `json:"half_day"`              // ex: false
+	HolidayCalendarName string `json:"holiday_calendar_name"` // ex: "DE (Hamburg) Feiertage CompanyName"
+	ID                  string `json:"id"`                    // ex: 123456
+	Name                string `json:"name"`                  // ex: "2. Weihnachtstag"
+	Date                string `json:"date"`                  // ex: "2022-12-26"
+}
+
+type Data[M any] struct {
+	Data M `json:"data"`
+}
+
+func (c *Client) GetMyAttendanceCalendar(startDate, endDate time.Time) (*AttendanceCalendar, error) {
+	return c.GetAttendanceCalendar(c.EmployeeID, startDate, endDate)
+}
+
+func (c *Client) GetAttendanceCalendar(employeeID int, startDate, endDate time.Time) (*AttendanceCalendar, error) {
+	if err := c.assertLoggedIn(); err != nil {
+		return nil, err
+	}
+
+	var queryParams url.Values
+	const timeDateOnlyLayout = "2006-01-02"
+	queryParams.Set("start_date", startDate.Format(timeDateOnlyLayout))
+	queryParams.Set("end_date", startDate.Format(timeDateOnlyLayout))
+
+	req, err := http.NewRequest("GET", fmt.Sprintf(
+		"/svc/attendance-bff/attendance-calendar/%d?%s",
+		employeeID, queryParams.Encode()), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.RawJSON(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return ParseResponseJSON[*AttendanceCalendar](resp)
+}
 
 // ----------------------
 
