@@ -49,7 +49,7 @@ func TestCacheDayIDs(t *testing.T) {
 	endDate := mustParseTime(t, "2006-01-02", "2023-01-31")
 
 	client := &Client{dayIDCache: make(map[string]*uuid.UUID)}
-	client.CacheDayIDs(knownDays, startDate, endDate)
+	client.cacheDayIDs(knownDays, startDate, endDate)
 
 	cache := client.dayIDCache
 
