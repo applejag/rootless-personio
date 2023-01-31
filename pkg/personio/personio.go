@@ -157,7 +157,7 @@ func ParseResponseJSON[M any](resp *http.Response) (M, error) {
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 
 	var typedBody struct {
-		Success bool `json:"success"`
+		Success *bool `json:"success"`
 		Error   struct {
 			Code      int                 `json:"code"`
 			Message   string              `json:"message"`
@@ -169,7 +169,7 @@ func ParseResponseJSON[M any](resp *http.Response) (M, error) {
 		return zero, fmt.Errorf("parse body: %w", err)
 	}
 
-	if !typedBody.Success {
+	if typedBody.Success != nil && !*typedBody.Success {
 		return zero, Error{
 			Code:      typedBody.Error.Code,
 			Message:   typedBody.Error.Message,

@@ -31,29 +31,44 @@ import (
 )
 
 type AttendanceCalendar struct {
-	AttendanceRights         map[string]bool                         `json:"attendance_rights"`
-	EmployeeWorkingSchedules struct{}                                `json:"employee_working_schedules"`
-	AttendanceDays           Data[[]AttendanceCalendarDay]           `json:"attendance_days"`
-	AttendancePeriods        Data[[]AttendanceCalendarAbsencePeriod] `json:"attendance_periods"`
-	OvertimeItems            struct{}                                `json:"overtime_items"`
-	AttendanceAlerts         struct{}                                `json:"attendance_alerts"`
-	AbsencePeriods           struct{}                                `json:"absence_periods"`
-	Holidays                 Data[[]AttendanceCalendarHoliday]       `json:"holidays"`
+	AttendanceRights         map[string]bool                  `json:"attendance_rights"`
+	EmployeeWorkingSchedules struct{}                         `json:"employee_working_schedules"`
+	AttendanceDays           Data[[]CalendarDay]              `json:"attendance_days"`
+	AttendancePeriods        Data[[]CalendarAttendancePeriod] `json:"attendance_periods"`
+	OvertimeItems            struct{}                         `json:"overtime_items"`
+	AttendanceAlerts         struct{}                         `json:"attendance_alerts"`
+	AbsencePeriods           Data[[]CalendarAbsencePeriod]    `json:"absence_periods"`
+	Holidays                 Data[[]CalendarHoliday]          `json:"holidays"`
 }
 
-type AttendanceCalendarDay struct {
-	ID         string                          `json:"id"` // ex: "d5bb4b32-c499-4f79-a534-93481505bd60"
-	Attributes AttendanceCalendarDayAttributes `json:"attributes"`
+type CalendarDay struct {
+	ID         string                `json:"id"` // ex: "d5bb4b32-c499-4f79-a534-93481505bd60"
+	Attributes CalendarDayAttributes `json:"attributes"`
 }
 
-type AttendanceCalendarDayAttributes struct {
+type CalendarDayAttributes struct {
 	BreakMin    int    `json:"break_min"`    // Duration of breaks in minutes
 	DurationMin int    `json:"duration_min"` // Duration of attendance in minutes
 	Status      string `json:"status"`       // ex: "empty"
 	Day         string `json:"day"`          // ex: "2023-01-20"
 }
 
-type AttendanceCalendarAbsencePeriod struct {
+type CalendarAttendancePeriod struct {
+	ID         string                             `json:"id"` // ex: "bc1edc0c-44ef-467f-89a0-10d0733efec5"
+	Attributes CalendarAttendancePeriodAttributes `json:"attributes"`
+}
+
+type CalendarAttendancePeriodAttributes struct {
+	AttendanceDayID string  `json:"attendance_day_id"` // ex: "81954d73-0b0d-4053-a5dc-937bdd62f9f7"
+	Comment         *string `json:"comment"`           // ex: ""
+	End             string  `json:"end"`               // ex: "2023-01-18T17:00:00Z"
+	LegacyBreakMin  int     `json:"legacy_break_min"`  // ex: 0
+	PeriodType      string  `json:"period_type"`       // ex: "work"
+	ProjectID       *int    `json:"project_id"`
+	Start           string  `json:"start"` // ex: "2023-01-18T13:00:00Z"
+}
+
+type CalendarAbsencePeriod struct {
 	ID                         string `json:"id"`   // ex: "123456789"
 	Name                       string `json:"name"` // ex: "Paid vacation"
 	TracksOvertime             bool   `json:"tracks_overtime"`
@@ -67,10 +82,10 @@ type AttendanceCalendarAbsencePeriod struct {
 	HalfDayEnd                 bool   `json:"half_day_end"`
 }
 
-type AttendanceCalendarHoliday struct {
-	HalfDay             string `json:"half_day"`              // ex: false
+type CalendarHoliday struct {
+	HalfDay             bool   `json:"half_day"`
 	HolidayCalendarName string `json:"holiday_calendar_name"` // ex: "DE (Hamburg) Feiertage CompanyName"
-	ID                  string `json:"id"`                    // ex: 123456
+	ID                  int    `json:"id"`                    // ex: 123456
 	Name                string `json:"name"`                  // ex: "2. Weihnachtstag"
 	Date                string `json:"date"`                  // ex: "2022-12-26"
 }
@@ -88,10 +103,10 @@ func (c *Client) GetAttendanceCalendar(employeeID int, startDate, endDate time.T
 		return nil, err
 	}
 
-	var queryParams url.Values
 	const timeDateOnlyLayout = "2006-01-02"
+	queryParams := url.Values{}
 	queryParams.Set("start_date", startDate.Format(timeDateOnlyLayout))
-	queryParams.Set("end_date", startDate.Format(timeDateOnlyLayout))
+	queryParams.Set("end_date", endDate.Format(timeDateOnlyLayout))
 
 	req, err := http.NewRequest("GET", fmt.Sprintf(
 		"/svc/attendance-bff/attendance-calendar/%d?%s",

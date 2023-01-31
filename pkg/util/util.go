@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/mattn/go-isatty"
 )
 
 var camelCaseReplacer = strings.NewReplacer(
@@ -78,9 +80,29 @@ func PrettyPath(s string) string {
 }
 
 func ColorizeJSON(data []byte) ([]byte, error) {
-	jq := exec.Command("jq", ".", "--color-output")
+	args := []string{"."}
+	if isatty.IsTerminal(os.Stdout.Fd()) {
+		args = append(args, "--color-output")
+	}
+
+	jq := exec.Command("jq", args...)
 	jq.Stdin = bytes.NewReader(data)
 	colorized, err := jq.Output()
+	if err != nil {
+		return nil, err
+	}
+	return colorized, nil
+}
+
+func ColorizeYAML(data []byte) ([]byte, error) {
+	args := []string{".", "-"}
+	if isatty.IsTerminal(os.Stdout.Fd()) {
+		args = append(args, "--colors")
+	}
+
+	yq := exec.Command("yq", args...)
+	yq.Stdin = bytes.NewReader(data)
+	colorized, err := yq.Output()
 	if err != nil {
 		return nil, err
 	}

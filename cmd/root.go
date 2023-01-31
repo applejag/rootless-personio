@@ -23,12 +23,15 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/jilleJr/rootless-personio/pkg/config"
+	"github.com/jilleJr/rootless-personio/pkg/personio"
 	"github.com/jilleJr/rootless-personio/pkg/util"
 	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog"
@@ -46,6 +49,7 @@ var rootFlags = struct {
 	showHelp bool
 	verbose  int
 	quiet    bool
+	noLogin  bool
 }{}
 
 var rootCmd = &cobra.Command{
@@ -85,6 +89,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Show this help text")
 	rootCmd.PersistentFlags().CountVarP(&rootFlags.verbose, "verbose", "v", `Shows verbose logging (-v=info, -vv=debug, -vvv=trace)`)
 	rootCmd.PersistentFlags().BoolVarP(&rootFlags.quiet, "quiet", "q", false, `Disables logging (same as "--log.level disabled")`)
+	rootCmd.Flags().BoolVar(&rootFlags.noLogin, "no-login", false, `Skip logging in before the request`)
 }
 
 func initConfig() {
@@ -193,5 +198,88 @@ func overrideLoggerSettings() {
 
 	if rootFlags.quiet {
 		cfg.Log.Level = config.LogLevel(zerolog.Disabled)
+	}
+}
+
+func newLoggedInClient() (*personio.Client, error) {
+	if cfg.BaseURL == "" {
+		log.Error().Msg("Missing base URL! Must set baseUrl config or PERSONIO_BASEURL env var.")
+		return nil, errors.New("missing base URL")
+	}
+
+	client, err := personio.New(cfg.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug().Str("baseUrl", client.BaseURL).Msg("Created valid client.")
+
+	if rootFlags.noLogin {
+		return client, nil
+	}
+
+	var missingCredentials bool
+	if cfg.Auth.Email == "" {
+		missingCredentials = true
+		log.Error().Msg("Missing email! Must set auth.email config or PERSONIO_AUTH_EMAIL env var.")
+	}
+	if cfg.Auth.Password == "" {
+		missingCredentials = true
+		log.Error().Msg("Missing password! Must set auth.password config or PERSONIO_AUTH_PASSWORD env var.")
+	}
+	if missingCredentials {
+		return nil, errors.New("missing credentials")
+	}
+	if err := client.Login(cfg.Auth.Email, cfg.Auth.Password); err != nil {
+		return nil, err
+	}
+	log.Info().Int("employeeId", client.EmployeeID).
+		Msg("Successfully logged in.")
+	return client, nil
+}
+
+func printOutputJSONOrYAML(model any) error {
+	switch cfg.Output {
+	case config.OutFormatYAML:
+		// Encode to JSON first, so we reuse the `json:"field_name"` tags
+		jsonBytes, err := json.Marshal(model)
+		if err != nil {
+			return err
+		}
+		var newModel any
+		if err := yaml.Unmarshal(jsonBytes, &newModel); err != nil {
+			return err
+		}
+
+		// Then encode again using YAML
+		var buf bytes.Buffer
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(2)
+		if err := enc.Encode(newModel); err != nil {
+			return err
+		}
+		b := buf.Bytes()
+		prettyBytes, err := util.ColorizeYAML(b)
+		if err != nil {
+			// Swallow error, as colorizing is not a citical feature
+			log.Debug().Err(err).Msg("Failed colorizing YAML.")
+			fmt.Println(string(b))
+			return nil
+		}
+		fmt.Println(string(prettyBytes))
+		return nil
+	default:
+		b, err := json.MarshalIndent(model, "", "  ")
+		if err != nil {
+			return err
+		}
+		prettyBytes, err := util.ColorizeJSON(b)
+		if err != nil {
+			// Swallow error, as colorizing is not a citical feature
+			log.Debug().Err(err).Msg("Failed colorizing JSON.")
+			fmt.Println(string(b))
+			return nil
+		}
+		fmt.Println(string(prettyBytes))
+		return nil
 	}
 }

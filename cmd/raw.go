@@ -18,7 +18,7 @@
 package cmd
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -27,10 +27,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jilleJr/rootless-personio/pkg/personio"
-	"github.com/jilleJr/rootless-personio/pkg/util"
-	"github.com/mattn/go-isatty"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +36,6 @@ var rawFlags = struct {
 	json     string
 	headers  []string
 	formData []string
-	noLogin  bool
 }{}
 
 var rawCmd = &cobra.Command{
@@ -55,30 +50,13 @@ as a logged in user, and print the resulting JSON data.`,
 		if err != nil {
 			return err
 		}
-		client, err := personio.New(baseURL)
+		if baseURL != "" {
+			cfg.BaseURL = baseURL
+		}
+
+		client, err := newLoggedInClient()
 		if err != nil {
 			return err
-		}
-		log.Debug().Str("baseUrl", client.BaseURL).Msg("Created valid client.")
-
-		if !rawFlags.noLogin {
-			var missingCredentials bool
-			if cfg.Auth.Email == "" {
-				missingCredentials = true
-				log.Error().Msg("Missing email! Must set auth.email config or PERSONIO_AUTH_EMAIL env var.")
-			}
-			if cfg.Auth.Password == "" {
-				missingCredentials = true
-				log.Error().Msg("Missing password! Must set auth.password config or PERSONIO_AUTH_PASSWORD env var.")
-			}
-			if missingCredentials {
-				return errors.New("missing credentials")
-			}
-			if err := client.Login(cfg.Auth.Email, cfg.Auth.Password); err != nil {
-				return err
-			}
-			log.Info().Int("employeeId", client.EmployeeID).
-				Msg("Successfully logged in.")
 		}
 
 		method := http.MethodGet
@@ -126,12 +104,13 @@ as a logged in user, and print the resulting JSON data.`,
 				return fmt.Errorf("read response body: %w", err)
 			}
 
-			if responseIsJSON(resp) && isatty.IsTerminal(os.Stdout.Fd()) {
-				if colorized, err := util.ColorizeJSON(respBody); err == nil {
-					fmt.Println(string(colorized))
-				} else {
-					log.Debug().Err(err).Msg("Colorize JSON response.")
-					fmt.Println(string(respBody))
+			if responseIsJSON(resp) {
+				var model any
+				if err := json.Unmarshal(respBody, &model); err != nil {
+					return err
+				}
+				if err := printOutputJSONOrYAML(model); err != nil {
+					return err
 				}
 			} else {
 				fmt.Println(string(respBody))
@@ -165,19 +144,15 @@ func init() {
 	rawCmd.Flags().StringVar(&rawFlags.json, "json", rawFlags.json, `Request JSON body, same as --data, but sends and expects "Content-Type: application/json"`)
 	rawCmd.Flags().StringArrayVarP(&rawFlags.headers, "header", "H", nil, `Add custom headers to request (format "Key: value")`)
 	rawCmd.Flags().StringArrayVarP(&rawFlags.formData, "form", "F", nil, `Add multipart MIME data, and send "Content-Type: application/x-www-form-urlencoded" (format "key=value")`)
-	rawCmd.Flags().BoolVar(&rawFlags.noLogin, "no-login", false, `Skip logging in before the request`)
 }
 
 func getBaseURL(urlArg string) (string, error) {
-	if cfg.BaseURL != "" {
-		return cfg.BaseURL, nil
-	}
 	u, err := url.Parse(urlArg)
 	if err != nil {
 		return "", fmt.Errorf("parse positional arg as URL: %w", err)
 	}
 	if u.Host == "" {
-		return "", errors.New("must provide url config or hostname in positional arg")
+		return "", nil
 	}
 	u.Path = ""
 	return u.String(), nil
