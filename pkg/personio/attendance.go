@@ -22,13 +22,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jilleJr/rootless-personio/pkg/util"
+	"github.com/rs/zerolog/log"
 )
+
+const timeDateOnlyLayout = "2006-01-02"
 
 type AttendanceCalendar struct {
 	AttendanceRights         map[string]bool                  `json:"attendance_rights"`
@@ -42,7 +45,7 @@ type AttendanceCalendar struct {
 }
 
 type CalendarDay struct {
-	ID         string                `json:"id"` // ex: "d5bb4b32-c499-4f79-a534-93481505bd60"
+	ID         uuid.UUID             `json:"id"` // ex: "d5bb4b32-c499-4f79-a534-93481505bd60"
 	Attributes CalendarDayAttributes `json:"attributes"`
 }
 
@@ -54,18 +57,18 @@ type CalendarDayAttributes struct {
 }
 
 type CalendarAttendancePeriod struct {
-	ID         string                             `json:"id"` // ex: "bc1edc0c-44ef-467f-89a0-10d0733efec5"
+	ID         uuid.UUID                          `json:"id"` // ex: "bc1edc0c-44ef-467f-89a0-10d0733efec5"
 	Attributes CalendarAttendancePeriodAttributes `json:"attributes"`
 }
 
 type CalendarAttendancePeriodAttributes struct {
-	AttendanceDayID string  `json:"attendance_day_id"` // ex: "81954d73-0b0d-4053-a5dc-937bdd62f9f7"
-	Comment         *string `json:"comment"`           // ex: ""
-	End             string  `json:"end"`               // ex: "2023-01-18T17:00:00Z"
-	LegacyBreakMin  int     `json:"legacy_break_min"`  // ex: 0
-	PeriodType      string  `json:"period_type"`       // ex: "work"
-	ProjectID       *int    `json:"project_id"`
-	Start           string  `json:"start"` // ex: "2023-01-18T13:00:00Z"
+	AttendanceDayID uuid.UUID `json:"attendance_day_id"` // ex: "81954d73-0b0d-4053-a5dc-937bdd62f9f7"
+	Comment         *string   `json:"comment"`           // ex: ""
+	End             string    `json:"end"`               // ex: "2023-01-18T17:00:00Z"
+	LegacyBreakMin  int       `json:"legacy_break_min"`  // ex: 0
+	PeriodType      string    `json:"period_type"`       // ex: "work"
+	ProjectID       *int      `json:"project_id"`
+	Start           string    `json:"start"` // ex: "2023-01-18T13:00:00Z"
 }
 
 type CalendarAbsencePeriod struct {
@@ -103,7 +106,6 @@ func (c *Client) GetAttendanceCalendar(employeeID int, startDate, endDate time.T
 		return nil, err
 	}
 
-	const timeDateOnlyLayout = "2006-01-02"
 	queryParams := url.Values{}
 	queryParams.Set("start_date", startDate.Format(timeDateOnlyLayout))
 	queryParams.Set("end_date", endDate.Format(timeDateOnlyLayout))
@@ -121,6 +123,152 @@ func (c *Client) GetAttendanceCalendar(employeeID int, startDate, endDate time.T
 	}
 
 	return ParseResponseJSON[*AttendanceCalendar](resp)
+}
+
+type Period struct {
+	ID         uuid.UUID  `json:"id"`          // ex: "46365bc8-482a-41b2-8d36-68491140edd9"
+	PeriodType PeriodType `json:"period_type"` // ex: "work"
+	Comment    *string    `json:"comment"`     // ex: ""
+	ProjectID  *int       `json:"project_id"`  // ex: null
+	Start      time.Time  `json:"start"`       // ex: "2023-01-18T08:00:00Z"
+	End        time.Time  `json:"end"`         // ex: "2023-01-18T12:00:00Z"
+
+	// Required by the HTTP API, but seemingly unused
+	LegacyBreakMin int `json:"legacy_break_min"` // ex: 0
+}
+
+func (p Period) GetComment() string {
+	if p.Comment == nil {
+		return ""
+	}
+	return *p.Comment
+}
+
+func (p Period) GetProjectID() int {
+	if p.ProjectID == nil {
+		return 0
+	}
+	return *p.ProjectID
+}
+
+type PeriodType string
+
+const (
+	PeriodTypeWork  PeriodType = "work"
+	PeriodTypeBreak PeriodType = "break"
+)
+
+func (c *Client) SetAttendance(date time.Time, periods []Period) error {
+	if err := c.assertLoggedIn(); err != nil {
+		return err
+	}
+
+	for i := range periods {
+		if periods[i].ID == uuid.Nil {
+			periods[i].ID = uuid.New()
+		}
+		periods[i].Start = periods[i].Start.Truncate(time.Second).UTC()
+		periods[i].End = periods[i].End.Truncate(time.Second).UTC()
+		if periods[i].PeriodType == "" {
+			periods[i].PeriodType = PeriodTypeWork
+		}
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"employee_id": c.EmployeeID,
+		"periods":     periods,
+	})
+	if err != nil {
+		return err
+	}
+	bodyReader := bytes.NewReader(body)
+
+	dayID, err := c.GetOrNewDayUUID(date)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, "/api/v1/attendances/days/"+dayID.String(), bodyReader)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.RawJSON(req)
+	if err != nil {
+		return err
+	}
+
+	// Currently don't care about the response
+	_, err = ParseResponseJSON[any](resp)
+	return err
+}
+
+// GetOrNewDayUUID will either lookup a day's ID (from cache or by querying
+// the API), or generate a new ID and store this new ID in cache.
+//
+// After the remote lookup to the API, the client caches which days in the same
+// month that has undefined IDs.
+func (c *Client) GetOrNewDayUUID(date time.Time) (uuid.UUID, error) {
+	id, err := c.GetDayUUID(date)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get day UUID: %w", err)
+	}
+	if id != nil {
+		return *id, nil
+	}
+	newID := uuid.New()
+	dateString := date.Format(timeDateOnlyLayout)
+	c.dayIDCache[dateString] = &newID
+	log.Debug().Str("day", dateString).Stringer("uuid", newID).
+		Msg("Randomized new UUID for day.")
+	return newID, nil
+}
+
+// GetDayUUID will lookup a day's ID (from cache or by querying the API),
+// or nil if it is undefined.
+//
+// The Personio API want the client to generate the IDs, so an undefined day ID
+// means you are free to generate your own ID.
+//
+// After the remote lookup to the API, the client caches which days in the same
+// month that has undefined IDs.
+func (c *Client) GetDayUUID(date time.Time) (*uuid.UUID, error) {
+	dateString := date.Format(timeDateOnlyLayout)
+	// Cache contains nil values on "known to be undefined day IDs"
+	if id, ok := c.dayIDCache[dateString]; ok {
+		return id, nil
+	}
+	startDate, endDate := util.TimeFullMonth(date)
+	cal, err := c.GetMyAttendanceCalendar(startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("get days for range %s-%s: %w",
+			startDate.Format(timeDateOnlyLayout),
+			endDate.Format(timeDateOnlyLayout),
+			err)
+	}
+
+	c.cacheDayIDs(cal.AttendanceDays.Data, startDate, endDate)
+	return c.dayIDCache[dateString], nil
+}
+
+func (c *Client) cacheDayIDs(days []CalendarDay, startDate, endDate time.Time) {
+	// Cache known days
+	for _, day := range days {
+		// must clone the var so we don't take ref of the for loop var
+		id := day.ID
+		c.dayIDCache[day.Attributes.Day] = &id
+		log.Debug().Str("day", day.Attributes.Day).Stringer("uuid", id).
+			Msg("Cached existing UUID for day.")
+	}
+
+	// Set unknown days
+	loopEnd := endDate.Add(24 * time.Hour)
+	for date := startDate; date.Before(loopEnd); date = date.Add(24 * time.Hour) {
+		dateString := date.Format(timeDateOnlyLayout)
+		if _, ok := c.dayIDCache[dateString]; !ok {
+			c.dayIDCache[dateString] = nil
+		}
+	}
 }
 
 // ----------------------

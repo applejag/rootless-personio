@@ -13,6 +13,10 @@ auth:
   email: # firstname.lastname@example.com
   password: # SuperSecretPassword1234
 
+# Attendance periods that are shorter than this will get skipped
+# when creating or updating attendance.
+minimumPeriodDuration: 1m
+
 # The rootless-personio command line tool sends logs to STDERR
 # (e.g progress and debug log messages),
 # and outputs results to STDOUT (e.g HTTP request result).

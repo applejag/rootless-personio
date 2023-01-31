@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/jilleJr/rootless-personio/pkg/flagtype"
+	"github.com/jilleJr/rootless-personio/pkg/util"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -36,13 +37,14 @@ var attendanceCalendarCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		startDate := attendanceCalendarFlags.startDate.Time()
 		endDate := attendanceCalendarFlags.endDate.Time()
+
 		if !cmd.Flag("start").Changed {
-			year, month, _ := time.Now().Date()
-			startDate = time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+			monthStart, _ := util.TimeFullMonth(time.Now())
+			startDate = monthStart
 		}
 		if !cmd.Flag("end").Changed {
-			year, month, _ := time.Now().Date()
-			endDate = time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC)
+			_, monthEnd := util.TimeFullMonth(time.Now())
+			endDate = monthEnd
 		}
 
 		log.Debug().

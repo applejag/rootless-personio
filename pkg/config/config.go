@@ -22,6 +22,7 @@ package config
 
 import (
 	"reflect"
+	"time"
 
 	"github.com/invopop/jsonschema"
 	"github.com/jilleJr/rootless-personio/pkg/util"
@@ -39,6 +40,16 @@ type Config struct {
 	// Any query parameters and fragments will get removed.
 	BaseURL string `yaml:"baseUrl" jsonschema:"oneof_type=string;null" jsonschema_extras:"format=uri"`
 	Auth    Auth
+
+	// MinimumPeriodDuration is the duration for which attendance periods that
+	// are shorter than will get skipped when creating or updating attendance.
+	//
+	// The value is a Go duration, which allows values like:
+	// - 30s
+	// - 12m30s
+	// - 2h12m30s
+	MinimumPeriodDuration time.Duration `yaml:"minimumPeriodDuration" jsonschema:"type=string"`
+
 	// Output is the format of the command line results.
 	// This controls the format of the single command line
 	// result output written to STDOUT.

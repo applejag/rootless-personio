@@ -72,6 +72,10 @@
         "auth": {
           "$ref": "#/$defs/auth"
         },
+        "minimumPeriodDuration": {
+          "type": "string",
+          "description": "MinimumPeriodDuration is the duration for which attendance periods that\nare shorter than will get skipped when creating or updating attendance.\n\nThe value is a Go duration, which allows values like:\n- 30s\n- 12m30s\n- 2h12m30s"
+        },
         "output": {
           "$ref": "#/$defs/outFormat",
           "description": "Output is the format of the command line results.\nThis controls the format of the single command line\nresult output written to STDOUT."

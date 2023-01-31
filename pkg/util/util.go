@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/mattn/go-isatty"
@@ -107,4 +108,10 @@ func ColorizeYAML(data []byte) ([]byte, error) {
 		return nil, err
 	}
 	return colorized, nil
+}
+
+func TimeFullMonth(date time.Time) (time.Time, time.Time) {
+	year, month, _ := time.Now().Date()
+	return time.Date(year, month, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC)
 }

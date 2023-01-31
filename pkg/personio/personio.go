@@ -33,6 +33,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -53,6 +54,7 @@ type Client struct {
 	http       *http.Client
 	EmployeeID int
 	csrfToken  string
+	dayIDCache map[string]*uuid.UUID
 }
 
 func New(baseURL string) (*Client, error) {
@@ -65,8 +67,9 @@ func New(baseURL string) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		http:    &http.Client{Jar: jar},
-		BaseURL: normalURL,
+		http:       &http.Client{Jar: jar},
+		BaseURL:    normalURL,
+		dayIDCache: make(map[string]*uuid.UUID),
 	}, nil
 }
 
